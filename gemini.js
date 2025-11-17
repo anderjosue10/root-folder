@@ -1,6 +1,10 @@
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   try {
-    const prompt = req.body.prompt;
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Use POST" });
+    }
+
+    const { prompt } = req.body;
     const apiKey = process.env.GEMINI_KEY;
 
     const response = await fetch(
@@ -15,9 +19,9 @@ export default async function handler(req, res) {
     );
 
     const data = await response.json();
-    res.status(200).json(data);
+    return res.status(200).json(data);
 
-  } catch (error) {
-    res.status(500).json({ error: "error" });
+  } catch (err) {
+    return res.status(500).json({ error: "Server error" });
   }
 }
