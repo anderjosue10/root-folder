@@ -22,10 +22,10 @@ export default async function handler(req, res) {
     }
 
     console.log("📤 Enviando a Gemini, prompt:", prompt?.substring(0, 50) + "...");
-    console.log("🔑 API Key:", apiKey.substring(0, 10) + "...");
 
+    // 🔥 USA LA MISMA URL QUE FUNCIONA EN EL PROYECTO DE TU AMIGO
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { 
@@ -40,7 +40,12 @@ export default async function handler(req, res) {
                 }
               ]
             }
-          ]
+          ],
+          // 🔥 AGREGA LA CONFIGURACIÓN DE GENERACIÓN (opcional)
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 800
+          }
         })
       }
     );
@@ -57,7 +62,7 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json();
-    console.log("✅ Respuesta exitosa de Gemini");
+    console.log("✅ Respuesta exitosa de Gemini!");
     return res.status(200).json(data);
 
   } catch (err) {
