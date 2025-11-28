@@ -23,9 +23,9 @@ export default async function handler(req, res) {
 
     console.log("📤 Enviando a Gemini, prompt:", prompt?.substring(0, 50) + "...");
 
-    // Contexto fijo para todas las respuestas: siempre orientadas al portafolio de Anderson
+    // Contexto fijo para respuestas de portafolio
     // (ingeniero en sistemas). Esto fuerza a Gemini a formatear y presentar las respuestas
-    // como entradas o descripciones técnicas para su portafolio profesional.
+    // como entradas o descripciones técnicas para el portafolio profesional.
     const portfolioContext = `Eres un asistente que responde SOLO en el formato de un portafolio profesional para Anderson, ingeniero en sistemas.
   - Presenta una breve introducción (1-2 frases) que sitúe a Anderson y su rol.
   - Incluye un título claro, una descripción técnica breve, una lista de puntos técnicos (qué hiciste / cómo lo hiciste) y un resultado/impacto final.
@@ -34,7 +34,26 @@ export default async function handler(req, res) {
   Responde a la petición del usuario a continuación:`;
 
     const userPrompt = (prompt || "").trim();
-    const modifiedPrompt = `${portfolioContext}\n\n${userPrompt}`;
+
+    // Detectar si el prompt está orientado al portafolio o no.
+    // Usamos una lista de palabras clave simples — esto puede mejorarse con clasificación más avanzada.
+    const portfolioKeywords = [
+      'portafolio', 'portfolio', 'proyecto', 'proyectos', 'caso de estudio', 'presentación', 'portafolio profesional', 'descripción del proyecto', 'perfil', 'cv', 'currículum'
+    ];
+
+    const isPortfolio = portfolioKeywords.some(k => new RegExp(`\\b${k}\\b`, 'i').test(userPrompt));
+
+    let modifiedPrompt = '';
+    if (isPortfolio) {
+      // Mantener comportamiento previo para prompts de portafolio
+      modifiedPrompt = `${portfolioContext}\n\n${userPrompt}`;
+    } else {
+      // Para prompts NO relacionados, añadimos la frase solicitada y pedimos respuesta normal
+      // El usuario pidió exactamente esta frase como prefijo — la mantenemos igual y añadimos
+      // una instrucción corta para que la IA conteste la pregunta de forma normal.
+      const nonPortfolioIntro = "No está relacionado al portafolio, pero como asistente de Anderson te doy la respuesta:";
+      modifiedPrompt = `${nonPortfolioIntro}\n\n${userPrompt}\n\nResponde la pregunta de forma normal y completa.`;
+    }
 
     // 🔥 USA LA MISMA URL QUE FUNCIONA EN EL PROYECTO DE TU AMIGO
     const response = await fetch(
