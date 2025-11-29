@@ -23,6 +23,11 @@ export default async function handler(req, res) {
 
     console.log("📤 Enviando a Gemini, prompt:", prompt?.substring(0, 50) + "...");
 
+    // Texto fijo de saludo y contexto para respuestas de portafolio
+    // Este saludo se usará cuando el usuario diga 'hola' o similares, y también
+    // se incluye al principio de las respuestas orientadas al portafolio.
+    const greetingText = "Hola, soy el asistente de Anderson. ¿Quieres saber algo de su portafolio o quieres preguntarme otra cosa?";
+
     // Contexto fijo para respuestas de portafolio
     // (ingeniero en sistemas). Esto fuerza a Gemini a formatear y presentar las respuestas
     // como entradas o descripciones técnicas para el portafolio profesional.
@@ -45,14 +50,51 @@ export default async function handler(req, res) {
 
     let modifiedPrompt = '';
     if (isPortfolio) {
-      // Mantener comportamiento previo para prompts de portafolio
-      modifiedPrompt = `${portfolioContext}\n\n${userPrompt}`;
+      // Para queries relacionadas con el portafolio intentamos descargar
+      // el contenido real desplegado en GitHub Pages y añadirlo al prompt.
+      const portfolioUrl = 'https://anderjosue10.github.io/IngSistemas/';
+
+      let siteText = '';
+      try {
+        const siteResp = await fetch(portfolioUrl, { method: 'GET' });
+        if (siteResp && siteResp.ok) {
+          const html = await siteResp.text();
+          // Extraemos texto simple: removemos scripts/styles y etiquetas HTML
+          const cleaned = html
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+
+          // Limitar para evitar prompts enormes — dejamos un fragmento representativo
+          siteText = cleaned.slice(0, 3000);
+        } else {
+          console.warn('⚠️ No se pudo descargar el sitio del portafolio: status', siteResp?.status);
+        }
+      } catch (err) {
+        console.warn('⚠️ Error al descargar/parsing del sitio del portafolio:', err.message || err);
+      }
+
+      // Construimos el prompt incorporando el texto extraído si existe
+      const siteSection = siteText ? `Información extraída del portafolio (https://anderjosue10.github.io/IngSistemas/):\n\n${siteText}\n\n` : '';
+
+      // Para queries relacionadas con portafolio incluimos el saludo, la información
+      // extraída del sitio (si se obtuvo) y el contexto de formato de portafolio.
+      modifiedPrompt = `${greetingText}\n\n${siteSection}${portfolioContext}\n\n${userPrompt}`;
     } else {
-      // Para prompts NO relacionados, añadimos la frase solicitada y pedimos respuesta normal
-      // El usuario pidió exactamente esta frase como prefijo — la mantenemos igual y añadimos
-      // una instrucción corta para que la IA conteste la pregunta de forma normal.
-      const nonPortfolioIntro = "No está relacionado al portafolio, pero como asistente de Anderson te doy la respuesta:";
-      modifiedPrompt = `${nonPortfolioIntro}\n\n${userPrompt}\n\nResponde la pregunta de forma normal y completa.`;
+      // Si el usuario sólo saluda, respondemos con el saludo.
+      const isGreeting = /^(hola|buenos?(?:\s+d[ií]as|\s+tardes|\s+noches))\b/i.test(userPrompt);
+
+      if (isGreeting) {
+        modifiedPrompt = greetingText;
+      } else {
+        // Para prompts NO relacionados con el portafolio forzamos un prefijo
+        // claro y pedimos que la IA conteste la pregunta de forma normal.
+        // Esto asegura coherencia entre dispositivos (móvil/PC).
+        const nonPortfolioIntro = 'De acuerdo, tu pregunta no está relacionada con el portafolio de Anderson. La respuesta es:';
+        modifiedPrompt = `${nonPortfolioIntro}\n\n${userPrompt}\n\nResponde la pregunta de forma normal y completa.`;
+      }
     }
 
     // 🔥 USA LA MISMA URL QUE FUNCIONA EN EL PROYECTO DE TU AMIGO
