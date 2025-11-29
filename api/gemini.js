@@ -23,60 +23,14 @@ export default async function handler(req, res) {
 
     console.log("📤 Enviando a Gemini, prompt:", prompt?.substring(0, 50) + "...");
 
-    // Texto fijo de saludo y contexto para respuestas de portafolio
-    const greetingText = "Hola, soy el asistente de Anderson. ¿Quieres saber algo de su portafolio o quieres preguntarme otra cosa?";
+    // Contexto mejorado para evitar preguntas
+    const systemPrompt = `Eres un asistente del portafolio de Anderson. Responde directamente sin hacer preguntas al usuario.
 
-    const portfolioContext = `Eres un asistente que responde SOLO en el formato de un portafolio profesional para Anderson, ingeniero en sistemas.
-  - Presenta una breve introducción (1-2 frases) que sitúe a Anderson y su rol.
-  - Incluye un título claro, una descripción técnica breve, una lista de puntos técnicos (qué hiciste / cómo lo hiciste) y un resultado/impacto final.
-  - Usa un tono profesional, conciso y orientado a posibles clientes o reclutadores.
-  - Menciona las tecnologías clave usadas cuando aplique.
-  Responde a la petición del usuario a continuación:`;
+Si el usuario saluda: "¡Hola! Soy el asistente de Anderson. Puedo contarte sobre sus proyectos de ingeniería de sistemas, tecnologías que maneja y su experiencia profesional."
 
-    const userPrompt = (prompt || "").trim();
+Para consultas del portafolio: proporciona información clara y directa.
 
-    const portfolioKeywords = [
-      'portafolio', 'portfolio', 'proyecto', 'proyectos', 'caso de estudio', 'presentación', 'portafolio profesional', 'descripción del proyecto', 'perfil', 'cv', 'currículum'
-    ];
-
-    const isPortfolio = portfolioKeywords.some(k => new RegExp(`\\b${k}\\b`, 'i').test(userPrompt));
-
-    let modifiedPrompt = '';
-    if (isPortfolio) {
-      const portfolioUrl = 'https://anderjosue10.github.io/IngSistemas/';
-
-      let siteText = '';
-      try {
-        const siteResp = await fetch(portfolioUrl, { method: 'GET' });
-        if (siteResp && siteResp.ok) {
-          const html = await siteResp.text();
-          const cleaned = html
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/\s{2,}/g, ' ')
-            .trim();
-
-          siteText = cleaned.slice(0, 3000);
-        } else {
-          console.warn('⚠️ No se pudo descargar el sitio del portafolio: status', siteResp?.status);
-        }
-      } catch (err) {
-        console.warn('⚠️ Error al descargar/parsing del sitio del portafolio:', err.message || err);
-      }
-
-      const siteSection = siteText ? `Información extraída del portafolio (https://anderjosue10.github.io/IngSistemas/):\n\n${siteText}\n\n` : '';
-      modifiedPrompt = `${greetingText}\n\n${siteSection}${portfolioContext}\n\n${userPrompt}`;
-    } else {
-      const isGreeting = /^(hola|buenos?(?:\s+d[ií]as|\s+tardes|\s+noches))\b/i.test(userPrompt);
-
-      if (isGreeting) {
-        modifiedPrompt = greetingText;
-      } else {
-        const nonPortfolioIntro = 'De acuerdo, tu pregunta no está relacionada con el portafolio de Anderson. La respuesta es:';
-        modifiedPrompt = `${nonPortfolioIntro}\n\n${userPrompt}\n\nResponde la pregunta de forma normal y completa.`;
-      }
-    }
+Consulta: ${prompt}`;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -90,7 +44,7 @@ export default async function handler(req, res) {
             {
               parts: [
                 {
-                  text: modifiedPrompt
+                  text: systemPrompt
                 }
               ]
             }
@@ -117,25 +71,34 @@ export default async function handler(req, res) {
     const data = await response.json();
     console.log("✅ Respuesta exitosa de Gemini!");
     
-    // 🔥 ESTA ES LA PARTE CRÍTICA QUE TE FALTA
-    // Extraer solo el texto de la respuesta de Gemini
+    // Extraer el texto de la respuesta
     let responseText = "";
     
     try {
       if (data.candidates && data.candidates[0] && data.candidates[0].content) {
         responseText = data.candidates[0].content.parts[0].text;
       } else {
-        responseText = "Lo siento, no pude procesar tu solicitud en este momento.";
+        responseText = "Lo siento, no pude procesar tu solicitud.";
       }
     } catch (error) {
-      console.error("Error procesando respuesta de Gemini:", error);
+      console.error("Error procesando respuesta:", error);
       responseText = "Error procesando la respuesta.";
     }
 
-    // Enviar solo el texto procesado, no toda la respuesta de Gemini
-    return res.status(200).json({ 
-      success: true,
-      response: responseText 
+    // 🔥 VERSIÓN COMPATIBLE: Devuelve la misma estructura que antes
+    // pero con el texto ya procesado
+    return res.status(200).json({
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                text: responseText
+              }
+            ]
+          }
+        }
+      ]
     });
 
   } catch (err) {
