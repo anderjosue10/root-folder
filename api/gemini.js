@@ -23,81 +23,22 @@ export default async function handler(req, res) {
 
     console.log("📤 Enviando a Gemini, prompt:", prompt?.substring(0, 50) + "...");
 
-    // Texto fijo de saludo y contexto para respuestas de portafolio
-    // Este saludo se usará cuando el usuario diga 'hola' o similares, y también
-    // se incluye al principio de las respuestas orientadas al portafolio.
-    const greetingText = "Hola, soy el asistente de Anderson. ¿Quieres saber algo de su portafolio o quieres preguntarme otra cosa?";
+    // Contexto más estricto para evitar que Gemini haga preguntas
+    const systemPrompt = `Eres un asistente del portafolio de Anderson, un ingeniero en sistemas. 
+Responde directamente a las consultas sobre su experiencia, proyectos y habilidades.
+NO hagas preguntas al usuario. 
+NO preguntes "¿qué quieres saber?" o variaciones.
+Proporciona información clara y directa basada en el portafolio.
 
-    // Contexto fijo para respuestas de portafolio
-    // (ingeniero en sistemas). Esto fuerza a Gemini a formatear y presentar las respuestas
-    // como entradas o descripciones técnicas para el portafolio profesional.
-    const portfolioContext = `Eres un asistente que responde SOLO en el formato de un portafolio profesional para Anderson, ingeniero en sistemas.
-  - Presenta una breve introducción (1-2 frases) que sitúe a Anderson y su rol.
-  - Incluye un título claro, una descripción técnica breve, una lista de puntos técnicos (qué hiciste / cómo lo hiciste) y un resultado/impacto final.
-  - Usa un tono profesional, conciso y orientado a posibles clientes o reclutadores.
-  - Menciona las tecnologías clave usadas cuando aplique.
-  Responde a la petición del usuario a continuación:`;
+Si el usuario saluda, responde con un saludo breve y ofrécele información sobre Anderson.
 
-    const userPrompt = (prompt || "").trim();
+Ejemplos:
+- Usuario: "hola" → Respuesta: "¡Hola! Soy el asistente del portafolio de Anderson. Puedo contarte sobre sus proyectos, habilidades y experiencia como ingeniero en sistemas."
+- Usuario: "cuéntame sobre tus proyectos" → Respuesta directa sobre proyectos
+- Usuario: "qué tecnologías manejas" → Respuesta directa sobre tecnologías
 
-    // Detectar si el prompt está orientado al portafolio o no.
-    // Usamos una lista de palabras clave simples — esto puede mejorarse con clasificación más avanzada.
-    const portfolioKeywords = [
-      'portafolio', 'portfolio', 'proyecto', 'proyectos', 'caso de estudio', 'presentación', 'portafolio profesional', 'descripción del proyecto', 'perfil', 'cv', 'currículum'
-    ];
+Consulta actual del usuario: ${prompt}`;
 
-    const isPortfolio = portfolioKeywords.some(k => new RegExp(`\\b${k}\\b`, 'i').test(userPrompt));
-
-    let modifiedPrompt = '';
-    if (isPortfolio) {
-      // Para queries relacionadas con el portafolio intentamos descargar
-      // el contenido real desplegado en GitHub Pages y añadirlo al prompt.
-      const portfolioUrl = 'https://anderjosue10.github.io/IngSistemas/';
-
-      let siteText = '';
-      try {
-        const siteResp = await fetch(portfolioUrl, { method: 'GET' });
-        if (siteResp && siteResp.ok) {
-          const html = await siteResp.text();
-          // Extraemos texto simple: removemos scripts/styles y etiquetas HTML
-          const cleaned = html
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/\s{2,}/g, ' ')
-            .trim();
-
-          // Limitar para evitar prompts enormes — dejamos un fragmento representativo
-          siteText = cleaned.slice(0, 3000);
-        } else {
-          console.warn('⚠️ No se pudo descargar el sitio del portafolio: status', siteResp?.status);
-        }
-      } catch (err) {
-        console.warn('⚠️ Error al descargar/parsing del sitio del portafolio:', err.message || err);
-      }
-
-      // Construimos el prompt incorporando el texto extraído si existe
-      const siteSection = siteText ? `Información extraída del portafolio (https://anderjosue10.github.io/IngSistemas/):\n\n${siteText}\n\n` : '';
-
-      // Para queries relacionadas con portafolio incluimos el saludo, la información
-      // extraída del sitio (si se obtuvo) y el contexto de formato de portafolio.
-      modifiedPrompt = `${greetingText}\n\n${siteSection}${portfolioContext}\n\n${userPrompt}`;
-    } else {
-      // Si el usuario sólo saluda, respondemos con el saludo.
-      const isGreeting = /^(hola|buenos?(?:\s+d[ií]as|\s+tardes|\s+noches))\b/i.test(userPrompt);
-
-      if (isGreeting) {
-        modifiedPrompt = greetingText;
-      } else {
-        // Para prompts NO relacionados con el portafolio forzamos un prefijo
-        // claro y pedimos que la IA conteste la pregunta de forma normal.
-        // Esto asegura coherencia entre dispositivos (móvil/PC).
-        const nonPortfolioIntro = 'De acuerdo, tu pregunta no está relacionada con el portafolio de Anderson. La respuesta es:';
-        modifiedPrompt = `${nonPortfolioIntro}\n\n${userPrompt}\n\nResponde la pregunta de forma normal y completa.`;
-      }
-    }
-
-    // 🔥 USA LA MISMA URL QUE FUNCIONA EN EL PROYECTO DE TU AMIGO
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
@@ -110,16 +51,16 @@ export default async function handler(req, res) {
             {
               parts: [
                 {
-                  // Enviamos el prompt modificado con el contexto del portafolio
-                  text: modifiedPrompt
+                  text: systemPrompt
                 }
               ]
             }
           ],
-          // 🔥 AGREGA LA CONFIGURACIÓN DE GENERACIÓN (opcional)
           generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 800
+            temperature: 0.3, // Reducido para respuestas más directas
+            maxOutputTokens: 500,
+            topK: 40,
+            topP: 0.8
           }
         })
       }
@@ -138,7 +79,27 @@ export default async function handler(req, res) {
 
     const data = await response.json();
     console.log("✅ Respuesta exitosa de Gemini!");
-    return res.status(200).json(data);
+    
+    // 🔥 ESTA ES LA PARTE CRÍTICA QUE TE FALTA
+    // Extraer solo el texto de la respuesta de Gemini
+    let responseText = "";
+    
+    try {
+      if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+        responseText = data.candidates[0].content.parts[0].text;
+      } else {
+        responseText = "Lo siento, no pude procesar tu solicitud en este momento.";
+      }
+    } catch (error) {
+      console.error("Error procesando respuesta de Gemini:", error);
+      responseText = "Error procesando la respuesta.";
+    }
+
+    // Enviar solo el texto procesado, no toda la respuesta de Gemini
+    return res.status(200).json({ 
+      success: true,
+      response: responseText 
+    });
 
   } catch (err) {
     console.error("💥 Server error completo:", err);
