@@ -23,21 +23,60 @@ export default async function handler(req, res) {
 
     console.log("📤 Enviando a Gemini, prompt:", prompt?.substring(0, 50) + "...");
 
-    // Contexto más estricto para evitar que Gemini haga preguntas
-    const systemPrompt = `Eres un asistente del portafolio de Anderson, un ingeniero en sistemas. 
-Responde directamente a las consultas sobre su experiencia, proyectos y habilidades.
-NO hagas preguntas al usuario. 
-NO preguntes "¿qué quieres saber?" o variaciones.
-Proporciona información clara y directa basada en el portafolio.
+    // Texto fijo de saludo y contexto para respuestas de portafolio
+    const greetingText = "Hola, soy el asistente de Anderson. ¿Quieres saber algo de su portafolio o quieres preguntarme otra cosa?";
 
-Si el usuario saluda, responde con un saludo breve y ofrécele información sobre Anderson.
+    const portfolioContext = `Eres un asistente que responde SOLO en el formato de un portafolio profesional para Anderson, ingeniero en sistemas.
+  - Presenta una breve introducción (1-2 frases) que sitúe a Anderson y su rol.
+  - Incluye un título claro, una descripción técnica breve, una lista de puntos técnicos (qué hiciste / cómo lo hiciste) y un resultado/impacto final.
+  - Usa un tono profesional, conciso y orientado a posibles clientes o reclutadores.
+  - Menciona las tecnologías clave usadas cuando aplique.
+  Responde a la petición del usuario a continuación:`;
 
-Ejemplos:
-- Usuario: "hola" → Respuesta: "¡Hola! Soy el asistente del portafolio de Anderson. Puedo contarte sobre sus proyectos, habilidades y experiencia como ingeniero en sistemas."
-- Usuario: "cuéntame sobre tus proyectos" → Respuesta directa sobre proyectos
-- Usuario: "qué tecnologías manejas" → Respuesta directa sobre tecnologías
+    const userPrompt = (prompt || "").trim();
 
-Consulta actual del usuario: ${prompt}`;
+    const portfolioKeywords = [
+      'portafolio', 'portfolio', 'proyecto', 'proyectos', 'caso de estudio', 'presentación', 'portafolio profesional', 'descripción del proyecto', 'perfil', 'cv', 'currículum'
+    ];
+
+    const isPortfolio = portfolioKeywords.some(k => new RegExp(`\\b${k}\\b`, 'i').test(userPrompt));
+
+    let modifiedPrompt = '';
+    if (isPortfolio) {
+      const portfolioUrl = 'https://anderjosue10.github.io/IngSistemas/';
+
+      let siteText = '';
+      try {
+        const siteResp = await fetch(portfolioUrl, { method: 'GET' });
+        if (siteResp && siteResp.ok) {
+          const html = await siteResp.text();
+          const cleaned = html
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+
+          siteText = cleaned.slice(0, 3000);
+        } else {
+          console.warn('⚠️ No se pudo descargar el sitio del portafolio: status', siteResp?.status);
+        }
+      } catch (err) {
+        console.warn('⚠️ Error al descargar/parsing del sitio del portafolio:', err.message || err);
+      }
+
+      const siteSection = siteText ? `Información extraída del portafolio (https://anderjosue10.github.io/IngSistemas/):\n\n${siteText}\n\n` : '';
+      modifiedPrompt = `${greetingText}\n\n${siteSection}${portfolioContext}\n\n${userPrompt}`;
+    } else {
+      const isGreeting = /^(hola|buenos?(?:\s+d[ií]as|\s+tardes|\s+noches))\b/i.test(userPrompt);
+
+      if (isGreeting) {
+        modifiedPrompt = greetingText;
+      } else {
+        const nonPortfolioIntro = 'De acuerdo, tu pregunta no está relacionada con el portafolio de Anderson. La respuesta es:';
+        modifiedPrompt = `${nonPortfolioIntro}\n\n${userPrompt}\n\nResponde la pregunta de forma normal y completa.`;
+      }
+    }
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
@@ -51,16 +90,14 @@ Consulta actual del usuario: ${prompt}`;
             {
               parts: [
                 {
-                  text: systemPrompt
+                  text: modifiedPrompt
                 }
               ]
             }
           ],
           generationConfig: {
-            temperature: 0.3, // Reducido para respuestas más directas
-            maxOutputTokens: 500,
-            topK: 40,
-            topP: 0.8
+            temperature: 0.3,
+            maxOutputTokens: 800
           }
         })
       }
